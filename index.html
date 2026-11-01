@@ -1,0 +1,1248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Brgy. Tambunbubu One Click Emergency Broadcast System">
+    <meta name="author" content="Alhazar Amil">
+    <title>Brgy. Tambunbubu Emergency Dispatch</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Firebase Web SDK (v10 Compat Mode) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+
+    <style>
+        :root {
+            --theme-primary: #10b981;
+            --theme-primary-hover: #059669;
+            --theme-glow: rgba(16, 185, 129, 0.35);
+            --theme-bg-accent: rgba(6, 78, 59, 0.25);
+            --theme-text-contrast: #09090b;
+        }
+
+        .theme-accent-text { color: var(--theme-primary) !important; }
+        .theme-accent-bg { background-color: var(--theme-primary) !important; color: var(--theme-text-contrast) !important; }
+        .theme-accent-bg-hover:hover { background-color: var(--theme-primary-hover) !important; }
+        .theme-accent-border { border-color: var(--theme-primary) !important; }
+        .theme-accent-soft-bg { background-color: var(--theme-bg-accent) !important; }
+
+        @keyframes radar-pulse {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.12); opacity: 0.2; }
+            100% { transform: scale(0.95); opacity: 0.8; }
+        }
+        .animate-radar {
+            animation: radar-pulse 2s infinite ease-in-out;
+        }
+
+        @keyframes emergency-flash {
+            0%, 100% { background-color: rgba(127, 29, 29, 0.45); border-color: rgba(239, 68, 68, 0.8); }
+            50% { background-color: rgba(220, 38, 38, 0.65); border-color: rgba(254, 202, 202, 1); }
+        }
+        .emergency-active-shell {
+            animation: emergency-flash 0.6s infinite;
+        }
+    </style>
+</head>
+<body class="bg-[#0b0f17] text-zinc-100 min-h-screen flex flex-col justify-between relative overflow-x-hidden selection:bg-red-500 selection:text-white font-sans">
+
+    <!-- DEFAULT AUDIO ELEMENT -->
+    <audio id="emergency-alarm-audio" preload="auto" loop src="https://actions.google.com/sounds/v1/alarms/emergency_alarm_bell.ogg"></audio>
+
+    <!-- BACKGROUND GRID -->
+    <div class="fixed inset-0 bg-[linear-gradient(to_right,#1f293708_1px,transparent_1px),linear-gradient(to_bottom,#1f293708_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none z-0"></div>
+
+    <!-- CENTER POP-UP EMERGENCY NOTIFICATION MODAL -->
+    <div id="center-emergency-modal" class="fixed inset-0 z-50 bg-black/90 backdrop-blur-lg flex items-center justify-center p-4 hidden animate-fade-in">
+        <div class="bg-gradient-to-b from-red-950 via-zinc-900 to-zinc-950 border-2 border-red-500 rounded-3xl p-6 w-full max-w-sm text-center shadow-[0_0_50px_rgba(239,68,68,0.5)] space-y-4">
+            <div class="w-16 h-16 bg-red-600/30 border border-red-500/60 rounded-full flex items-center justify-center mx-auto animate-bounce">
+                <i data-lucide="siren" class="w-10 h-10 text-red-500"></i>
+            </div>
+            <div>
+                <span class="text-[10px] font-black tracking-widest text-red-400 uppercase bg-red-950/80 px-3 py-1 rounded-full border border-red-800">
+                    ⚠️ AKTIBONG ALERTO SA SAKUNA
+                </span>
+                <h2 id="modal-disaster-title" class="text-xl font-black text-white mt-3 uppercase tracking-wide">
+                    PANGKALAHATANG SAKUNA
+                </h2>
+                <p id="modal-incident-type" class="text-xs font-bold text-amber-400 mt-1 uppercase">
+                    URI NG SAKLOLO: MEDICAL
+                </p>
+            </div>
+            
+            <div class="bg-zinc-950/80 p-3 rounded-xl border border-zinc-800/80 text-left space-y-1">
+                <p class="text-[11px] text-zinc-400">Nag-report: <strong id="modal-reporter-name" class="text-zinc-200">--</strong></p>
+                <p class="text-[11px] text-zinc-400">Lokasyon: <strong id="modal-reporter-sitio" class="text-zinc-200">--</strong></p>
+                <p class="text-[11px] text-zinc-400">Oras: <strong id="modal-time-stamp" class="text-zinc-200">--</strong></p>
+            </div>
+
+            <div class="pt-2 flex flex-col gap-2">
+                <a id="modal-call-btn" href="tel:" class="w-full bg-red-600 hover:bg-red-500 text-white font-black py-3 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg cursor-pointer">
+                    <i data-lucide="phone-call" class="w-4 h-4"></i> Tawagan ang Nag-report
+                </a>
+                <button type="button" onclick="dismissCenterModal()" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold py-2.5 rounded-xl text-xs uppercase tracking-wider border border-zinc-700 cursor-pointer">
+                    Isara ang Notipikasyon (Cancel)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN APP CONTAINER -->
+    <div id="app-viewport" class="relative z-10 max-w-md mx-auto w-full min-h-screen flex flex-col justify-between p-4 sm:p-5 transition-all duration-300">
+        
+        <!-- HEADER / COMMAND BAR -->
+        <header class="bg-zinc-900/90 backdrop-blur-md border border-zinc-800 rounded-2xl p-3.5 shadow-xl flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="relative cursor-pointer group" onclick="toggleAdminModal(true)">
+                    <div id="seal-glow" class="absolute -inset-1 bg-gradient-to-r from-emerald-500 to-green-400 rounded-full blur opacity-40 group-hover:opacity-75 transition"></div>
+                    <div class="relative w-12 h-12 rounded-full bg-zinc-950 border border-zinc-700 flex items-center justify-center overflow-hidden shrink-0">
+                        <svg class="w-10 h-10" viewBox="0 0 500 500">
+                            <circle cx="250" cy="250" r="240" fill="#EAB308"/>
+                            <circle cx="250" cy="250" r="195" fill="#15803D"/>
+                            <circle cx="250" cy="250" r="160" fill="#0284C7"/>
+                            <path d="M 120,310 L 250,150 L 380,310 Z" fill="#166534"/>
+                        </svg>
+                    </div>
+                </div>
+                <div>
+                    <h1 class="text-base sm:text-lg font-black tracking-wide uppercase theme-accent-text leading-tight">
+                        BRGY. TAMBUNBUBU
+                    </h1>
+                    <p class="text-[9px] tracking-widest text-zinc-400 font-bold uppercase">Command & Emergency System</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-1.5">
+                <button type="button" onclick="toggleSettingsModal(true)" class="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 cursor-pointer" title="Settings">
+                    <i data-lucide="settings" class="w-4 h-4 theme-accent-text"></i>
+                </button>
+                <div class="flex flex-col items-end">
+                    <button type="button" onclick="toggleAdminModal(true)" class="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-[10px] font-bold text-zinc-200 inline-flex items-center gap-1 cursor-pointer">
+                        <i data-lucide="shield-check" class="w-3.5 h-3.5 theme-accent-text"></i> Admin
+                    </button>
+                    <span id="user-status-text" class="text-[9px] text-zinc-400 mt-1 max-w-[90px] truncate">Hindi Nakarehistro</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- MAIN ACTION AREA -->
+        <main class="my-auto flex flex-col items-center justify-center py-3 space-y-3">
+            
+            <!-- INCIDENT TYPE SELECTOR -->
+            <div class="w-full">
+                <div class="flex items-center justify-between mb-1.5 px-1">
+                    <label class="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+                        Uri ng Saklolo / Alerto
+                    </label>
+                    <span class="text-[10px] text-zinc-500 font-mono">Pumili ng isa</span>
+                </div>
+                <div class="grid grid-cols-4 gap-1.5">
+                    <button type="button" onclick="selectIncident('MEDICAL')" id="btn-inc-MEDICAL" class="inc-btn flex flex-col items-center justify-center p-2.5 rounded-xl border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-900 transition text-zinc-300 cursor-pointer">
+                        <i data-lucide="ambulance" class="w-5 h-5 text-red-500 mb-1"></i>
+                        <span class="text-[9px] font-black">MEDIKAL</span>
+                    </button>
+                    <button type="button" onclick="selectIncident('FIRE')" id="btn-inc-FIRE" class="inc-btn flex flex-col items-center justify-center p-2.5 rounded-xl border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-900 transition text-zinc-300 cursor-pointer">
+                        <i data-lucide="flame" class="w-5 h-5 text-amber-500 mb-1"></i>
+                        <span class="text-[9px] font-black">SUNOG</span>
+                    </button>
+                    <button type="button" onclick="selectIncident('POLICE')" id="btn-inc-POLICE" class="inc-btn flex flex-col items-center justify-center p-2.5 rounded-xl border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-900 transition text-zinc-300 cursor-pointer">
+                        <i data-lucide="shield" class="w-5 h-5 text-cyan-400 mb-1"></i>
+                        <span class="text-[9px] font-black">POLIS/TANOD</span>
+                    </button>
+                    <button type="button" onclick="selectIncident('MEETING')" id="btn-inc-MEETING" class="inc-btn flex flex-col items-center justify-center p-2.5 rounded-xl border border-zinc-800 bg-zinc-900/60 hover:bg-zinc-900 transition text-zinc-300 cursor-pointer">
+                        <i data-lucide="users" class="w-5 h-5 text-emerald-400 mb-1"></i>
+                        <span class="text-[9px] font-black">MEETING</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- TYPEABLE DISASTER CLASSIFICATION INPUT -->
+            <div class="w-full">
+                <label class="block text-[11px] font-bold text-zinc-400 mb-1 px-1 uppercase tracking-wider">
+                    Uri ng Sakuna (I-type ang detalye)
+                </label>
+                <input type="text" id="disaster-type" placeholder="Halimbawa: Flash Flood, Lindol, Tsunami..." class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500">
+            </div>
+
+            <!-- CENTRAL RADAR / SOS PANIC BUTTON -->
+            <div class="relative flex items-center justify-center my-2">
+                <div id="sos-radar-ring" class="absolute w-44 h-44 sm:w-52 sm:h-52 rounded-full border border-red-500/40 animate-radar hidden"></div>
+                <div id="sos-pulse-ring" class="absolute w-36 h-36 sm:w-44 sm:h-44 rounded-full bg-red-600/25 animate-ping hidden"></div>
+                
+                <button type="button" id="sos-btn" onclick="handleSOSTrigger()" class="relative z-10 w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-gradient-to-b from-red-600 via-red-700 to-red-900 hover:from-red-500 hover:to-red-800 active:scale-95 transition-all duration-200 shadow-2xl shadow-red-950/90 flex flex-col items-center justify-center border-4 border-red-400/80 group cursor-pointer">
+                    <i data-lucide="siren" class="w-8 h-8 sm:w-10 sm:h-10 text-white mb-1 group-hover:rotate-12 transition-transform"></i>
+                    <span class="text-2xl sm:text-3xl font-black tracking-widest text-white drop-shadow-md">SOS</span>
+                    <span id="sos-subtext" class="text-[9px] font-black tracking-widest text-red-200 uppercase mt-0.5">ONE CLICK</span>
+                </button>
+            </div>
+
+            <!-- STATUS & GPS READOUT -->
+            <div class="w-full bg-zinc-900/50 border border-zinc-800 rounded-xl p-2.5 text-center space-y-1">
+                <p id="status-text" class="text-xs font-semibold text-zinc-300">
+                    I-tap ang SOS button para i-broadcast ang saklolo at mag-trigger ng SMS sa lahat.
+                </p>
+                <div id="location-badge" class="hidden inline-flex items-center gap-1.5 text-[11px] font-mono text-red-400 bg-red-950/50 px-3 py-1 rounded-full border border-red-900/60">
+                    <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+                    <span id="coords-text">Lat: --, Lon: --</span>
+                </div>
+            </div>
+
+            <!-- PUBLIC RESPONDERS DRAWER -->
+            <div class="w-full bg-zinc-900/70 border border-zinc-800/80 rounded-2xl p-3 shadow-lg">
+                <div class="flex items-center justify-between mb-2 border-b border-zinc-800 pb-1.5">
+                    <h3 class="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <i data-lucide="radio" class="w-3.5 h-3.5"></i> Responders Directory
+                    </h3>
+                    <span id="public-responder-count" class="text-[10px] bg-cyan-950 text-cyan-300 px-2 py-0.5 rounded-full border border-cyan-800">0 online</span>
+                </div>
+                <div id="public-responders-list" class="space-y-2 max-h-24 overflow-y-auto pr-1">
+                    <p class="text-[11px] text-zinc-500 text-center py-2">Walang rehistradong responder sa kasalukuyan.</p>
+                </div>
+            </div>
+        </main>
+
+        <!-- FOOTER WITH EXPANDED DEVELOPER DETAILS -->
+        <footer class="pt-3 border-t border-zinc-900 flex items-center justify-between text-xs">
+            <button type="button" onclick="toggleRegisterModal(true)" class="flex items-center gap-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 font-medium transition py-2 px-3 rounded-xl cursor-pointer">
+                <i data-lucide="user-plus" class="w-4 h-4 theme-accent-text"></i>
+                <span>Mag-rehistro</span>
+            </button>
+
+            <!-- EXTENDED DEVELOPER CREDIT -->
+            <div class="text-right">
+                <p class="text-[9px] font-medium text-zinc-400">
+                    System Developer & Architect:
+                </p>
+                <p class="text-[11px] font-black theme-accent-text tracking-wide uppercase">
+                    Alhazar Amil
+                </p>
+                <p class="text-[8px] text-zinc-500 font-mono">Banguingui Emergency Tech</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- SETTINGS MODAL (MAY 8 DIFFERENT NOTIFICATION TONES) -->
+    <div id="settings-modal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 w-full max-w-sm shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <h3 class="text-sm font-bold theme-accent-text uppercase tracking-wider flex items-center gap-1.5">
+                    <i data-lucide="settings" class="w-4 h-4"></i> System Settings & 8 Alarm Tones
+                </h3>
+                <button type="button" onclick="toggleSettingsModal(false)" class="text-zinc-500 hover:text-zinc-300 cursor-pointer">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-[11px] font-semibold text-zinc-400 mb-1.5">Piliin ang Notification Tone (8 Uri)</label>
+                    <select id="setting-alarm-tone" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none">
+                        <option value="TONE_1">🚨 1. Emergency Bell Siren</option>
+                        <option value="TONE_2">🚑 2. Ambulance Hi-Low</option>
+                        <option value="TONE_3">🚓 3. Police Wang-wang</option>
+                        <option value="TONE_4">⚡ 4. High-Pitch Pulse</option>
+                        <option value="TONE_5">🔔 5. Digital Chime</option>
+                        <option value="TONE_6">⚠️ 6. Warning Buzzer</option>
+                        <option value="TONE_7">📟 7. Pager Beep Alert</option>
+                        <option value="TONE_8">📢 8. Megahorn Siren</option>
+                    </select>
+                </div>
+
+                <div class="flex items-center justify-between bg-zinc-950 p-3 rounded-xl border border-zinc-800">
+                    <div>
+                        <p class="text-xs font-bold text-zinc-200">Vibration Alert</p>
+                        <p class="text-[10px] text-zinc-500">I-vibrate ang phone kapag may alert</p>
+                    </div>
+                    <input type="checkbox" id="setting-vibration" checked class="w-4 h-4 accent-emerald-500 cursor-pointer">
+                </div>
+
+                <div class="pt-2">
+                    <button type="button" onclick="testAlarmPreview()" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold py-2 rounded-lg text-xs uppercase tracking-wider transition cursor-pointer mb-2">
+                        🔊 Subukan ang Tunog (Test Tone)
+                    </button>
+                    <button type="button" onclick="saveAppSettings()" class="w-full theme-accent-bg font-black py-2.5 rounded-lg text-xs uppercase tracking-wider transition cursor-pointer">
+                        I-save ang Settings
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- REGISTER MODAL -->
+    <div id="register-modal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 w-full max-w-sm shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <h3 class="text-sm font-bold theme-accent-text uppercase tracking-wider flex items-center gap-1.5">
+                    <i data-lucide="id-card" class="w-4 h-4"></i> Responder / Official Profiling
+                </h3>
+                <button type="button" onclick="toggleRegisterModal(false)" class="text-zinc-500 hover:text-zinc-300 cursor-pointer">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <form id="reg-form" onsubmit="submitRegistration(event)" class="space-y-3">
+                <div>
+                    <label class="block text-[11px] font-semibold text-zinc-400 mb-1">Buong Pangalan</label>
+                    <input type="text" id="reg-name" required placeholder="Juan Dela Cruz" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none">
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-[11px] font-semibold text-zinc-400 mb-1">Sitio / Pook</label>
+                        <input type="text" id="reg-sitio" required placeholder="Hal. Sitio Baybay" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-zinc-400 mb-1">Gampanin</label>
+                        <select id="reg-role" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-2 text-xs text-zinc-200 focus:outline-none">
+                            <option value="OFFICIAL">Brgy. Official / Tanod</option>
+                            <option value="RESPONDER">Emergency Responder</option>
+                            <option value="RESIDENT">Karaniwang Residente</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="responder-type-group" class="hidden">
+                    <label class="block text-[11px] font-semibold text-cyan-400 mb-1">Uri ng Responder</label>
+                    <select id="reg-responder-type" class="w-full bg-zinc-950 border border-cyan-800 rounded-lg px-2.5 py-2 text-xs text-zinc-200 focus:outline-none">
+                        <option value="Medical / Ambulance">Medical / Ambulance</option>
+                        <option value="BFP Fire Rescue">BFP Fire Rescue Team</option>
+                        <option value="Police / Brgy Tanod">Police / Brgy Tanod</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-[11px] font-semibold text-zinc-400 mb-1">Numero ng Telepono (SMS)</label>
+                    <input type="text" inputmode="numeric" pattern="[0-9]*" id="reg-phone" required placeholder="09123456789" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none">
+                </div>
+
+                <div class="pt-2">
+                    <button type="submit" class="w-full theme-accent-bg font-black py-2.5 rounded-lg text-xs uppercase tracking-wider transition cursor-pointer">
+                        I-sumite para sa Admin Approval
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ADMIN MODAL -->
+    <div id="admin-modal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 w-full max-w-md shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
+            
+            <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <h3 class="text-sm font-bold theme-accent-text uppercase tracking-wider flex items-center gap-1.5">
+                    <i data-lucide="shield-check" class="w-4 h-4"></i> Admin Dispatch Center
+                </h3>
+                <button type="button" onclick="toggleAdminModal(false)" class="text-zinc-500 hover:text-zinc-300 cursor-pointer">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <!-- ADMIN PASSCODE LOCK -->
+            <form id="admin-auth-form" onsubmit="handleAdminLogin(event)" class="py-6 space-y-3">
+                <p class="text-xs text-zinc-400 text-center">Maglagay ng Admin Authorization Passcode (Default: 1234)</p>
+                <input type="password" id="admin-passcode" required placeholder="****" class="w-full text-center tracking-widest text-lg font-bold bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 theme-accent-text focus:outline-none">
+                
+                <div class="flex items-center justify-between pt-1">
+                    <button type="button" onclick="toggleForgotPasswordModal(true)" class="text-[11px] text-amber-400 hover:underline cursor-pointer">
+                        Nakalimutan ang Password?
+                    </button>
+                    <button type="submit" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-100 font-bold px-4 py-2 rounded-lg text-xs uppercase tracking-wider transition cursor-pointer">
+                        Verify
+                    </button>
+                </div>
+            </form>
+
+            <!-- ADMIN DASHBOARD PANEL -->
+            <div id="admin-panel-view" class="hidden flex-1 overflow-y-auto space-y-4 pr-1">
+                
+                <div class="flex border-b border-zinc-800 gap-1 pb-2 overflow-x-auto">
+                    <button type="button" onclick="switchAdminTab('alerts')" id="tab-btn-alerts" class="text-[11px] font-bold px-2 py-1 rounded-lg theme-accent-soft-bg theme-accent-text border border-zinc-800 whitespace-nowrap cursor-pointer">
+                        Alerts (<span id="count-alerts">0</span>)
+                    </button>
+                    <button type="button" onclick="switchAdminTab('users')" id="tab-btn-users" class="text-[11px] font-bold px-2 py-1 rounded-lg bg-zinc-950 text-zinc-400 border border-zinc-800 whitespace-nowrap cursor-pointer">
+                        Pending (<span id="count-users">0</span>)
+                    </button>
+                    <button type="button" onclick="switchAdminTab('approved')" id="tab-btn-approved" class="text-[11px] font-bold px-2 py-1 rounded-lg bg-zinc-950 text-zinc-400 border border-zinc-800 whitespace-nowrap cursor-pointer">
+                        Approved (<span id="count-approved">0</span>)
+                    </button>
+                    <button type="button" onclick="switchAdminTab('theme')" id="tab-btn-theme" class="text-[11px] font-bold px-2 py-1 rounded-lg bg-zinc-950 text-zinc-400 border border-zinc-800 whitespace-nowrap flex items-center gap-1 cursor-pointer">
+                        <i data-lucide="palette" class="w-3 h-3"></i> Theme
+                    </button>
+                </div>
+
+                <!-- ALERTS TAB -->
+                <div id="admin-tab-alerts" class="space-y-2">
+                    <div id="alert-list-container" class="space-y-2">
+                        <p class="text-xs text-zinc-500 text-center py-4">Walang aktibong emergency broadcast.</p>
+                    </div>
+                </div>
+
+                <!-- PENDING USERS -->
+                <div id="admin-tab-users" class="hidden space-y-2">
+                    <div id="user-list-container" class="space-y-2">
+                        <p class="text-xs text-zinc-500 text-center py-4">Walang nakabinbing pagpapatibay ng account.</p>
+                    </div>
+                </div>
+
+                <!-- APPROVED USERS -->
+                <div id="admin-tab-approved" class="hidden space-y-2">
+                    <div id="approved-list-container" class="space-y-2">
+                        <p class="text-xs text-zinc-500 text-center py-4">Walang aprubadong account sa kasalukuyan.</p>
+                    </div>
+                </div>
+
+                <!-- THEME TAB -->
+                <div id="admin-tab-theme" class="hidden space-y-3">
+                    <p class="text-xs text-zinc-400">Pumili ng kulay ng tema para sa interface:</p>
+                    
+                    <div class="grid grid-cols-2 gap-2">
+                        <button type="button" onclick="setAppTheme('emerald')" class="flex items-center gap-2 p-2.5 rounded-xl border border-zinc-800 bg-zinc-950 hover:border-emerald-500 text-left cursor-pointer">
+                            <span class="w-4 h-4 rounded-full bg-emerald-500 inline-block"></span>
+                            <div>
+                                <p class="text-xs font-bold text-zinc-200">Neon Green</p>
+                                <p class="text-[9px] text-zinc-500">Tactical Emerald</p>
+                            </div>
+                        </button>
+
+                        <button type="button" onclick="setAppTheme('orange')" class="flex items-center gap-2 p-2.5 rounded-xl border border-zinc-800 bg-zinc-950 hover:border-orange-500 text-left cursor-pointer">
+                            <span class="w-4 h-4 rounded-full bg-orange-500 inline-block"></span>
+                            <div>
+                                <p class="text-xs font-bold text-zinc-200">Tactical Orange</p>
+                                <p class="text-[9px] text-zinc-500">Emergency Neon</p>
+                            </div>
+                        </button>
+
+                        <button type="button" onclick="setAppTheme('blue')" class="flex items-center gap-2 p-2.5 rounded-xl border border-zinc-800 bg-zinc-950 hover:border-cyan-500 text-left cursor-pointer">
+                            <span class="w-4 h-4 rounded-full bg-cyan-400 inline-block"></span>
+                            <div>
+                                <p class="text-xs font-bold text-zinc-200">Cyber Blue</p>
+                                <p class="text-[9px] text-zinc-500">Police / Rescue</p>
+                            </div>
+                        </button>
+
+                        <button type="button" onclick="setAppTheme('gold')" class="flex items-center gap-2 p-2.5 rounded-xl border border-zinc-800 bg-zinc-950 hover:border-amber-400 text-left cursor-pointer">
+                            <span class="w-4 h-4 rounded-full bg-amber-400 inline-block"></span>
+                            <div>
+                                <p class="text-xs font-bold text-zinc-200">Royal Gold</p>
+                                <p class="text-[9px] text-zinc-500">Barangay Seal Gold</p>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="pt-2 border-t border-zinc-800 text-[10px] text-zinc-500 text-center">
+                    Lead Systems Architect: <strong class="text-zinc-300">Alhazar Amil</strong>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- FORGOT PASSWORD MODAL -->
+    <div id="forgot-password-modal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 w-full max-w-sm shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <h3 class="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <i data-lucide="key-round" class="w-4 h-4"></i> Password Recovery Request
+                </h3>
+                <button type="button" onclick="toggleForgotPasswordModal(false)" class="text-zinc-500 hover:text-zinc-300 cursor-pointer">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <form id="forgot-pass-form" onsubmit="submitForgotPasswordRequest(event)" class="space-y-3">
+                <div>
+                    <label class="block text-[11px] font-semibold text-zinc-400 mb-1">Pangalan / User ID</label>
+                    <input type="text" id="forgot-username" required placeholder="Ilagay ang iyong pangalan" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-semibold text-zinc-400 mb-1">Numero ng Telepono</label>
+                    <input type="text" id="forgot-phone" required placeholder="09123456789" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-semibold text-zinc-400 mb-1">Piliin ang Email ng Developer (Padadalhan)</label>
+                    <select id="forgot-target-email" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500">
+                        <option value="amillazar0@gmail.com">amillazar0@gmail.com (Gmail)</option>
+                        <option value="alhazar_amil@yahoo.com">alhazar_amil@yahoo.com (Yahoo)</option>
+                    </select>
+                </div>
+
+                <p class="text-[10px] text-zinc-400 leading-relaxed">
+                    Ang kahilingang ito ay ipapadala sa napiling email ni <strong>Alhazar Amil</strong> para sa pagpapatibay at pag-reset.
+                </p>
+
+                <div class="pt-2">
+                    <button type="submit" class="w-full bg-amber-600 hover:bg-amber-500 text-zinc-950 font-black py-2.5 rounded-lg text-xs uppercase tracking-wider transition cursor-pointer">
+                        I-send sa Napiling Email
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ADMIN EDIT USER MODAL -->
+    <div id="admin-edit-modal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 w-full max-w-sm shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <h3 class="text-sm font-bold theme-accent-text uppercase tracking-wider flex items-center gap-1.5">
+                    <i data-lucide="edit-3" class="w-4 h-4"></i> Baguhin ang Impormasyon
+                </h3>
+                <button type="button" onclick="toggleAdminEditModal(false)" class="text-zinc-500 hover:text-zinc-300 cursor-pointer">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <form id="admin-edit-form" onsubmit="saveAdminUserEdit(event)" class="space-y-3">
+                <input type="hidden" id="edit-user-id">
+                <div>
+                    <label class="block text-[11px] font-semibold text-zinc-400 mb-1">Buong Pangalan</label>
+                    <input type="text" id="edit-user-name" required class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none">
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-[11px] font-semibold text-zinc-400 mb-1">Sitio / Pook</label>
+                        <input type="text" id="edit-user-sitio" required class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-semibold text-zinc-400 mb-1">Gampanin</label>
+                        <select id="edit-user-role" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-2 text-xs text-zinc-200 focus:outline-none">
+                            <option value="OFFICIAL">Brgy. Official / Tanod</option>
+                            <option value="RESPONDER">Emergency Responder</option>
+                            <option value="RESIDENT">Karaniwang Residente</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-[11px] font-semibold text-zinc-400 mb-1">Numero ng Telepono</label>
+                    <input type="text" id="edit-user-phone" required class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none">
+                </div>
+
+                <div class="pt-2">
+                    <button type="submit" class="w-full theme-accent-bg font-black py-2.5 rounded-lg text-xs uppercase tracking-wider transition cursor-pointer">
+                        I-save ang Pagbabago
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT APP LOGIC WITH 8 DIFFERENT TONES -->
+    <script>
+        const THEMES = {
+            emerald: { primary: '#10b981', hover: '#059669', glow: 'rgba(16, 185, 129, 0.4)', softBg: 'rgba(6, 78, 59, 0.3)', contrast: '#09090b', gradient: 'from-emerald-500 to-green-400' },
+            orange: { primary: '#f97316', hover: '#ea580c', glow: 'rgba(249, 115, 22, 0.4)', softBg: 'rgba(124, 45, 18, 0.3)', contrast: '#ffffff', gradient: 'from-orange-600 to-yellow-500' },
+            blue: { primary: '#06b6d4', hover: '#0891b2', glow: 'rgba(6, 182, 212, 0.4)', softBg: 'rgba(22, 78, 99, 0.3)', contrast: '#09090b', gradient: 'from-cyan-500 to-blue-600' },
+            gold: { primary: '#fbbf24', hover: '#d97706', glow: 'rgba(251, 191, 36, 0.4)', softBg: 'rgba(120, 53, 15, 0.3)', contrast: '#09090b', gradient: 'from-amber-400 to-yellow-500' }
+        };
+
+        function setAppTheme(themeKey) {
+            const theme = THEMES[themeKey] || THEMES.emerald;
+            const root = document.documentElement;
+            
+            root.style.setProperty('--theme-primary', theme.primary);
+            root.style.setProperty('--theme-primary-hover', theme.hover);
+            root.style.setProperty('--theme-glow', theme.glow);
+            root.style.setProperty('--theme-bg-accent', theme.softBg);
+            root.style.setProperty('--theme-text-contrast', theme.contrast);
+
+            const glow = document.getElementById('seal-glow');
+            if (glow) {
+                glow.className = `absolute -inset-1 bg-gradient-to-r ${theme.gradient} rounded-full blur opacity-40 group-hover:opacity-75 transition`;
+            }
+            localStorage.setItem('tb_theme', themeKey);
+            if (db) db.ref('settings/theme').set(themeKey);
+        }
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyYOUR_API_KEY_HERE",
+            authDomain: "brgy-tambunbubu.firebaseapp.com",
+            databaseURL: "https://brgy-tambunbubu-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "brgy-tambunbubu"
+        };
+
+        let db = null;
+        try {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.database();
+            console.log("Firebase initialized successfully.");
+        } catch(e) {
+            console.warn("Running in Local Storage Mode.");
+        }
+
+        let selectedIncidentType = 'MEDICAL';
+        let isEmergencyActive = false;
+        let currentUser = JSON.parse(localStorage.getItem('tb_user') || 'null');
+        let allUsers = JSON.parse(localStorage.getItem('tb_all_users') || '[]');
+        let localAlerts = JSON.parse(localStorage.getItem('tb_local_alerts') || '[]');
+        let wakeLock = null;
+        let lastAlertIdKey = null;
+
+        let selectedAlarmTone = localStorage.getItem('tb_alarm_tone') || 'TONE_1';
+        let vibrationEnabled = localStorage.getItem('tb_vibration') !== 'false';
+
+        // Web Audio API Synthesizer para sa 8 iba't ibang natatanging tunog
+        let audioCtx = null;
+        let activeOscillator = null;
+        let activeGainNode = null;
+        let alarmInterval = null;
+
+        function requestSystemNotificationPermission() {
+            if ('Notification' in window && Notification.permission !== 'granted') {
+                Notification.requestPermission();
+            }
+        }
+
+        async function requestWakeLock() {
+            if ('wakeLock' in navigator) {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                } catch (err) {}
+            }
+        }
+
+        document.addEventListener("visibilitychange", async () => {
+            if (wakeLock !== null && document.visibilityState === 'visible') {
+                await requestWakeLock();
+            }
+        });
+
+        document.addEventListener("DOMContentLoaded", () => {
+            lucide.createIcons();
+            setAppTheme(localStorage.getItem('tb_theme') || 'emerald');
+            selectIncident('MEDICAL');
+            updateUserStatusUI();
+            renderPublicResponders(allUsers);
+            renderAdminAlerts(localAlerts);
+            requestWakeLock();
+            requestSystemNotificationPermission();
+
+            document.getElementById("setting-alarm-tone").value = selectedAlarmTone;
+            document.getElementById("setting-vibration").checked = vibrationEnabled;
+
+            document.getElementById("reg-role").addEventListener("change", (e) => {
+                document.getElementById("responder-type-group").classList.toggle("hidden", e.target.value !== 'RESPONDER');
+            });
+            
+            if (db) {
+                listenToFirebaseData();
+                setupUserStatusSync();
+            }
+        });
+
+        function toggleSettingsModal(show) {
+            document.getElementById("settings-modal").classList.toggle("hidden", !show);
+        }
+
+        function toggleForgotPasswordModal(show) {
+            document.getElementById("forgot-password-modal").classList.toggle("hidden", !show);
+        }
+
+        function submitForgotPasswordRequest(e) {
+            e.preventDefault();
+            const username = document.getElementById("forgot-username").value.trim();
+            const phone = document.getElementById("forgot-phone").value.trim();
+            const targetDeveloperEmail = document.getElementById("forgot-target-email").value;
+
+            const subject = encodeURIComponent("BRGY TAMBUNBUBU: Password Reset Request");
+            const body = encodeURIComponent(
+                `Magandang araw Developer Alhazar Amil,\n\n` +
+                `May humihiling ng password reset para sa emergency system admin access:\n\n` +
+                `- User / Pangalan: ${username}\n` +
+                `- Numero ng Telepono: ${phone}\n` +
+                `- Petsa at Oras: ${new Date().toLocaleString()}\n\n` +
+                `Mangyaring suriin at i-reset ang passcode kung aprubado.`
+            );
+
+            if (db) {
+                db.ref('password_requests/' + ('req_' + Date.now())).set({
+                    username: username,
+                    phone: phone,
+                    targetEmail: targetDeveloperEmail,
+                    timestamp: new Date().toLocaleString(),
+                    status: 'PENDING'
+                });
+            }
+
+            window.location.href = `mailto:${targetDeveloperEmail}?subject=${subject}&body=${body}`;
+            toggleForgotPasswordModal(false);
+        }
+
+        function saveAppSettings() {
+            selectedAlarmTone = document.getElementById("setting-alarm-tone").value;
+            vibrationEnabled = document.getElementById("setting-vibration").checked;
+
+            localStorage.setItem('tb_alarm_tone', selectedAlarmTone);
+            localStorage.setItem('tb_vibration', vibrationEnabled);
+
+            toggleSettingsModal(false);
+            alert("Nai-save na ang iyong mga setting!");
+        }
+
+        function testAlarmPreview() {
+            playAlarmAudio();
+            setTimeout(() => {
+                stopAlarmAudio();
+            }, 3000);
+        }
+
+        function setupUserStatusSync() {
+            if (!currentUser || !currentUser.id) return;
+            db.ref('users/' + currentUser.id).on('value', (snapshot) => {
+                const liveData = snapshot.val();
+                if (liveData) {
+                    currentUser = liveData;
+                    localStorage.setItem('tb_user', JSON.stringify(liveData));
+                    updateUserStatusUI();
+                } else {
+                    currentUser = null;
+                    localStorage.removeItem('tb_user');
+                    updateUserStatusUI();
+                }
+            });
+        }
+
+        function selectIncident(type) {
+            selectedIncidentType = type;
+            document.querySelectorAll('.inc-btn').forEach(btn => btn.classList.remove('theme-accent-border', 'theme-accent-soft-bg'));
+            const activeBtn = document.getElementById(`btn-inc-${type}`);
+            if (activeBtn) activeBtn.classList.add('theme-accent-border', 'theme-accent-soft-bg');
+        }
+
+        function handleSOSTrigger() {
+            if (!currentUser) {
+                alert("Mag-rehistro muna bilang Opisyal o Responder para magamit ang SOS Button.");
+                toggleRegisterModal(true);
+                return;
+            }
+            if (currentUser.status !== 'APPROVED') {
+                alert("Ang iyong account ay naghihintay pa o na-revoke ang pagpapatibay mula sa Barangay Admin.");
+                return;
+            }
+            if (currentUser.role !== 'OFFICIAL' && currentUser.role !== 'RESPONDER') {
+                alert("Tanging mga Aprubadong Opisyal at Responders lamang ang may pahintulot mag-trigger ng alarma.");
+                return;
+            }
+
+            if (!isEmergencyActive) {
+                startEmergencyBroadcast();
+            } else {
+                stopEmergencyBroadcast();
+            }
+        }
+
+        function startEmergencyBroadcast() {
+            isEmergencyActive = true;
+            const disasterInput = document.getElementById("disaster-type").value.trim();
+            const disasterType = disasterInput !== "" ? disasterInput : "Pangkalahatang Sakuna";
+
+            document.getElementById("app-viewport").classList.add("emergency-active-shell");
+            document.getElementById("sos-radar-ring").classList.remove("hidden");
+            document.getElementById("sos-pulse-ring").classList.remove("hidden");
+            document.getElementById("sos-subtext").textContent = "PATAYIN ALARMA";
+            document.getElementById("status-text").textContent = `NAGPAPADALA NG SMS (${disasterType}) SA LAHAT...`;
+            document.getElementById("status-text").className = "text-xs font-bold text-red-400 animate-pulse";
+
+            playAlarmAudio();
+            sendEmergencySMSNotification(selectedIncidentType, disasterType, currentUser.name, currentUser.sitio);
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        document.getElementById("location-badge").classList.remove("hidden");
+                        document.getElementById("coords-text").textContent = `Lat: ${pos.coords.latitude.toFixed(4)}, Lon: ${pos.coords.longitude.toFixed(4)}`;
+                        sendAlertToBackend(pos.coords.latitude, pos.coords.longitude, disasterType);
+                    },
+                    () => sendAlertToBackend(0, 0, disasterType)
+                );
+            } else {
+                sendAlertToBackend(0, 0, disasterType);
+            }
+        }
+
+        function stopEmergencyBroadcast() {
+            isEmergencyActive = false;
+            document.getElementById("app-viewport").classList.remove("emergency-active-shell");
+            document.getElementById("sos-radar-ring").classList.add("hidden");
+            document.getElementById("sos-pulse-ring").classList.add("hidden");
+            document.getElementById("sos-subtext").textContent = "ONE CLICK";
+            document.getElementById("status-text").textContent = "Napatay na ang alarma at broadcast.";
+            document.getElementById("status-text").className = "text-xs font-semibold text-zinc-300";
+            document.getElementById("location-badge").classList.add("hidden");
+            dismissCenterModal();
+        }
+
+        function dismissCenterModal() {
+            document.getElementById("center-emergency-modal").classList.add("hidden");
+            stopAlarmAudio();
+        }
+
+        // 8 DIFFERENT NOTIFICATION TONES GENERATOR
+        function playAlarmAudio() {
+            stopAlarmAudio();
+            
+            try {
+                window.AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+            } catch(e) {
+                console.error("Web Audio API not supported");
+                return;
+            }
+
+            const tone = document.getElementById("setting-alarm-tone").value || selectedAlarmTone;
+
+            activeOscillator = audioCtx.createOscillator();
+            activeGainNode = audioCtx.createGain();
+            activeGainNode.gain.setValueAtTime(0.4, audioCtx.currentTime);
+            activeOscillator.connect(activeGainNode);
+            activeGainNode.connect(audioCtx.destination);
+
+            if (tone === 'TONE_1') {
+                // 1. Emergency Bell Siren (Square wave pulse)
+                activeOscillator.type = 'square';
+                activeOscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
+                activeOscillator.start();
+                let toggle = true;
+                alarmInterval = setInterval(() => {
+                    if (!audioCtx) return;
+                    toggle = !toggle;
+                    activeGainNode.gain.setValueAtTime(toggle ? 0.4 : 0.05, audioCtx.currentTime);
+                }, 200);
+
+            } else if (tone === 'TONE_2') {
+                // 2. Ambulance Hi-Low
+                activeOscillator.type = 'sawtooth';
+                activeOscillator.frequency.setValueAtTime(550, audioCtx.currentTime);
+                activeOscillator.start();
+                let high = false;
+                alarmInterval = setInterval(() => {
+                    if (!audioCtx) return;
+                    high = !high;
+                    activeOscillator.frequency.setValueAtTime(high ? 950 : 550, audioCtx.currentTime);
+                }, 350);
+
+            } else if (tone === 'TONE_3') {
+                // 3. Police Wang-wang Wail
+                activeOscillator.type = 'sine';
+                activeOscillator.frequency.setValueAtTime(400, audioCtx.currentTime);
+                activeOscillator.start();
+                let f = 400;
+                let up = true;
+                alarmInterval = setInterval(() => {
+                    if (!audioCtx) return;
+                    f += up ? 50 : -50;
+                    if (f >= 1000) up = false;
+                    if (f <= 400) up = true;
+                    activeOscillator.frequency.setValueAtTime(f, audioCtx.currentTime);
+                }, 50);
+
+            } else if (tone === 'TONE_4') {
+                // 4. High-Pitch Pulse
+                activeOscillator.type = 'triangle';
+                activeOscillator.frequency.setValueAtTime(1400, audioCtx.currentTime);
+                activeOscillator.start();
+                let p = true;
+                alarmInterval = setInterval(() => {
+                    if (!audioCtx) return;
+                    p = !p;
+                    activeGainNode.gain.setValueAtTime(p ? 0.5 : 0, audioCtx.currentTime);
+                }, 100);
+
+            } else if (tone === 'TONE_5') {
+                // 5. Digital Chime (Sine wave rising arpeggio)
+                activeOscillator.type = 'sine';
+                let notes = [523.25, 659.25, 783.99, 1046.50];
+                let idx = 0;
+                activeOscillator.frequency.setValueAtTime(notes[0], audioCtx.currentTime);
+                activeOscillator.start();
+                alarmInterval = setInterval(() => {
+                    if (!audioCtx) return;
+                    idx = (idx + 1) % notes.length;
+                    activeOscillator.frequency.setValueAtTime(notes[idx], audioCtx.currentTime);
+                }, 150);
+
+            } else if (tone === 'TONE_6') {
+                // 6. Warning Buzzer (Sawtooth low frequency)
+                activeOscillator.type = 'sawtooth';
+                activeOscillator.frequency.setValueAtTime(180, audioCtx.currentTime);
+                activeOscillator.start();
+                let b = true;
+                alarmInterval = setInterval(() => {
+                    if (!audioCtx) return;
+                    b = !b;
+                    activeGainNode.gain.setValueAtTime(b ? 0.4 : 0.05, audioCtx.currentTime);
+                }, 300);
+
+            } else if (tone === 'TONE_7') {
+                // 7. Pager Beep Alert (Double quick beep)
+                activeOscillator.type = 'square';
+                activeOscillator.frequency.setValueAtTime(1200, audioCtx.currentTime);
+                activeOscillator.start();
+                let count = 0;
+                alarmInterval = setInterval(() => {
+                    if (!audioCtx) return;
+                    count++;
+                    activeGainNode.gain.setValueAtTime(count % 2 === 0 ? 0.4 : 0, audioCtx.currentTime);
+                }, 120);
+
+            } else {
+                // 8. Megahorn Siren (Descending sweep)
+                activeOscillator.type = 'sawtooth';
+                activeOscillator.frequency.setValueAtTime(900, audioCtx.currentTime);
+                activeOscillator.start();
+                let sf = 900;
+                alarmInterval = setInterval(() => {
+                    if (!audioCtx) return;
+                    sf -= 60;
+                    if (sf <= 300) sf = 900;
+                    activeOscillator.frequency.setValueAtTime(sf, audioCtx.currentTime);
+                }, 80);
+            }
+
+            if (vibrationEnabled && 'vibrate' in navigator) {
+                navigator.vibrate([400, 150, 400, 150, 400]);
+            }
+        }
+
+        function stopAlarmAudio() {
+            if (alarmInterval) {
+                clearInterval(alarmInterval);
+                alarmInterval = null;
+            }
+            if (activeOscillator) {
+                try {
+                    activeOscillator.stop();
+                    activeOscillator.disconnect();
+                } catch(e) {}
+                activeOscillator = null;
+            }
+            if (audioCtx) {
+                try {
+                    audioCtx.close();
+                } catch(e) {}
+                audioCtx = null;
+            }
+            if ('vibrate' in navigator) {
+                navigator.vibrate(0);
+            }
+        }
+
+        function triggerLockScreenNotification(disaster, incident, reporter, sitio) {
+            if ('Notification' in window && Notification.permission === 'granted') {
+                const title = `⚠️ SAKUNA: ${disaster.toUpperCase()} (${incident})`;
+                const options = {
+                    body: `May saklolo sa ${sitio} mula kay ${reporter}!`,
+                    icon: 'https://cdn-icons-png.flaticon.com/512/564/564619.png',
+                    vibrate: vibrationEnabled ? [300, 100, 300] : [],
+                    requireInteraction: true
+                };
+                new Notification(title, options);
+            }
+        }
+
+        async function sendEmergencySMSNotification(incidentType, disasterType, officialName, sitio) {
+            const recipientNumbers = allUsers
+                .filter(u => u.status === 'APPROVED' && u.phone)
+                .map(u => u.phone);
+
+            if (recipientNumbers.length === 0) return;
+
+            const message = `BRGY ALERT [${disasterType}]: May saklolo (${incidentType}) sa ${sitio}, iniulat ni ${officialName}. Rumesponde kaagad!`;
+            const apiKey = "ILAGAY_ANG_IYONG_SEMAPHORE_API_KEY_DITO"; 
+
+            try {
+                await fetch('https://api.semaphore.co/api/v4/messages', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ apikey: apiKey, number: recipientNumbers.join(','), message: message, sendername: 'BRGY_ALERT' })
+                });
+            } catch (err) {}
+        }
+
+        function submitRegistration(e) {
+            e.preventDefault();
+            const phone = document.getElementById("reg-phone").value.trim();
+            const role = document.getElementById("reg-role").value;
+            const responderType = document.getElementById("reg-responder-type").value;
+            
+            const userData = {
+                id: 'usr_' + Date.now(),
+                name: document.getElementById("reg-name").value.trim(),
+                sitio: document.getElementById("reg-sitio").value.trim(),
+                role: role,
+                responderType: role === 'RESPONDER' ? responderType : 'N/A',
+                phone: phone,
+                status: 'PENDING'
+            };
+
+            currentUser = userData;
+            localStorage.setItem('tb_user', JSON.stringify(userData));
+            allUsers.push(userData);
+            localStorage.setItem('tb_all_users', JSON.stringify(allUsers));
+            
+            if (db) {
+                db.ref('users/' + userData.id).set(userData);
+                setupUserStatusSync();
+            }
+            
+            updateUserStatusUI();
+            toggleRegisterModal(false);
+            alert("Naisumite ang rehistro! Maghintay ng Admin Approval.");
+        }
+
+        function updateUserStatusUI() {
+            const st = document.getElementById("user-status-text");
+            if (!currentUser) { 
+                st.textContent = "Hindi Nakarehistro"; 
+                st.className = "text-[9px] text-zinc-400 mt-1 max-w-[90px] truncate";
+                return; 
+            }
+            
+            st.textContent = `${currentUser.name} (${currentUser.status})`;
+            if (currentUser.status === 'APPROVED') {
+                st.className = "text-[9px] font-bold text-emerald-400 mt-1 max-w-[90px] truncate";
+            } else if (currentUser.status === 'REJECTED') {
+                st.className = "text-[9px] font-bold text-red-400 mt-1 max-w-[90px] truncate";
+            } else {
+                st.className = "text-[9px] font-bold text-amber-400 mt-1 max-w-[90px] truncate";
+            }
+        }
+
+        function renderPublicResponders(usersList) {
+            const container = document.getElementById("public-responders-list");
+            const activeResponders = usersList.filter(u => u.role === 'RESPONDER' && u.status === 'APPROVED');
+            document.getElementById("public-responder-count").textContent = `${activeResponders.length} online`;
+
+            if (!activeResponders.length) {
+                container.innerHTML = '<p class="text-[11px] text-zinc-500 text-center py-2">Walang rehistradong responder sa kasalukuyan.</p>';
+                return;
+            }
+
+            container.innerHTML = activeResponders.map(r => `
+                <div class="bg-zinc-950 p-2 rounded-lg border border-cyan-900/40 flex items-center justify-between text-xs">
+                    <div>
+                        <p class="font-bold text-zinc-200">${r.name} <span class="text-[9px] text-cyan-400">(${r.responderType})</span></p>
+                        <p class="text-[10px] text-zinc-400">${r.sitio} | Tel: ${r.phone}</p>
+                    </div>
+                    <a href="tel:${r.phone}" class="px-2 py-0.5 bg-cyan-600 hover:bg-cyan-500 text-zinc-950 font-bold rounded text-[10px] inline-flex items-center gap-1">
+                        <i data-lucide="phone" class="w-3 h-3"></i> Tawag
+                    </a>
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        function sendAlertToBackend(lat, lon, disasterType) {
+            const newAlert = {
+                id: 'alt_' + Date.now(),
+                type: selectedIncidentType,
+                disaster: disasterType,
+                officialName: currentUser ? currentUser.name : 'Unknown',
+                sitio: currentUser ? currentUser.sitio : 'Brgy. Tambunbubu',
+                phone: currentUser ? currentUser.phone : 'N/A',
+                lat: lat, lon: lon,
+                timestamp: new Date().toLocaleTimeString(),
+                status: 'ACTIVE'
+            };
+
+            if (db) {
+                db.ref('alerts/' + newAlert.id).set(newAlert);
+            } else {
+                localAlerts.push(newAlert);
+                localStorage.setItem('tb_local_alerts', JSON.stringify(localAlerts));
+                renderAdminAlerts(localAlerts);
+            }
+        }
+
+        function listenToFirebaseData() {
+            db.ref('alerts').on('value', (snap) => {
+                const alertsVal = snap.val();
+                const alerts = alertsVal ? Object.values(alertsVal) : [];
+                renderAdminAlerts(alerts);
+                
+                if (alerts.length > 0) {
+                    const latestAlert = alerts[alerts.length - 1];
+                    
+                    if (lastAlertIdKey !== latestAlert.id) {
+                        lastAlertIdKey = latestAlert.id;
+                        
+                        document.getElementById("modal-disaster-title").textContent = latestAlert.disaster || 'Pangkalahatang Sakuna';
+                        document.getElementById("modal-incident-type").textContent = `URI NG SAKLOLO: ${latestAlert.type}`;
+                        document.getElementById("modal-reporter-name").textContent = latestAlert.officialName;
+                        document.getElementById("modal-reporter-sitio").textContent = latestAlert.sitio;
+                        document.getElementById("modal-time-stamp").textContent = latestAlert.timestamp;
+                        document.getElementById("modal-call-btn").href = `tel:${latestAlert.phone}`;
+
+                        document.getElementById("center-emergency-modal").classList.remove("hidden");
+                        playAlarmAudio();
+                        triggerLockScreenNotification(latestAlert.disaster, latestAlert.type, latestAlert.officialName, latestAlert.sitio);
+                    }
+                } else {
+                    dismissCenterModal();
+                    lastAlertIdKey = null;
+                }
+            });
+
+            db.ref('users').on('value', (snap) => {
+                allUsers = snap.val() ? Object.values(snap.val()) : [];
+                localStorage.setItem('tb_all_users', JSON.stringify(allUsers));
+                renderAdminUsers(allUsers);
+                renderPublicResponders(allUsers);
+            });
+
+            db.ref('settings/theme').on('value', (snap) => {
+                if (snap.val() && THEMES[snap.val()]) setAppTheme(snap.val());
+            });
+        }
+
+        function toggleAdminModal(show) {
+            document.getElementById("admin-modal").classList.toggle("hidden", !show);
+            if (show) {
+                document.getElementById("admin-auth-form").classList.remove("hidden");
+                document.getElementById("admin-panel-view").classList.add("hidden");
+                document.getElementById("admin-passcode").value = "";
+            }
+        }
+
+        function toggleRegisterModal(show) {
+            document.getElementById("register-modal").classList.toggle("hidden", !show);
+        }
+
+        function handleAdminLogin(e) {
+            e.preventDefault();
+            if (document.getElementById("admin-passcode").value.trim() === "1234") {
+                document.getElementById("admin-auth-form").classList.add("hidden");
+                document.getElementById("admin-panel-view").classList.remove("hidden");
+                renderAdminUsers(allUsers);
+                
+                if (db) {
+                    db.ref('alerts').once('value').then(snap => {
+                        const alertsVal = snap.val();
+                        renderAdminAlerts(alertsVal ? Object.values(alertsVal) : []);
+                    });
+                } else {
+                    renderAdminAlerts(localAlerts);
+                }
+            } else {
+                alert("Maling Passcode! (Default: 1234)");
+            }
+        }
+
+        function renderAdminUsers(usersList) {
+            const pending = usersList.filter(u => u.status === 'PENDING');
+            const approved = usersList.filter(u => u.status === 'APPROVED');
+
+            document.getElementById("count-users").textContent = pending.length;
+            document.getElementById("count-approved").textContent = approved.length;
+
+            document.getElementById("user-list-container").innerHTML = pending.length ? pending.map(u => `
+                <div class="bg-zinc-950 p-3 rounded-lg border border-zinc-800 flex items-center justify-between text-xs">
+                    <div><p class="font-bold text-zinc-200">${u.name} <span class="text-[10px] text-amber-400">(${u.role})</span></p></div>
+                    <div class="flex gap-1">
+                        <button type="button" onclick="updateUserStatus('${u.id}', 'APPROVED')" class="px-2 py-1 bg-emerald-600 text-zinc-950 font-bold rounded text-[10px]">Approve</button>
+                        <button type="button" onclick="deleteUserByAdmin('${u.id}')" class="px-2 py-1 bg-red-600 text-white font-bold rounded text-[10px]">Reject</button>
+                    </div>
+                </div>
+            `).join('') : '<p class="text-xs text-zinc-500 text-center py-4">Walang pending.</p>';
+
+            document.getElementById("approved-list-container").innerHTML = approved.length ? approved.map(u => `
+                <div class="bg-zinc-950 p-3 rounded-lg border border-zinc-800 flex items-center justify-between text-xs">
+                    <div>
+                        <p class="font-bold text-zinc-200">${u.name} <span class="text-[10px] theme-accent-text">(${u.role})</span></p>
+                        <p class="text-[10px] text-zinc-400">${u.sitio} | Tel: ${u.phone}</p>
+                    </div>
+                    <div class="flex gap-1">
+                        <button type="button" onclick="openAdminEditUserModal('${u.id}')" class="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 text-cyan-400 font-bold rounded text-[10px]">Edit</button>
+                        <button type="button" onclick="deleteUserByAdmin('${u.id}')" class="px-2 py-1 bg-red-950 hover:bg-red-900 border border-red-800 text-red-300 font-bold rounded text-[10px]">Bura</button>
+                    </div>
+                </div>
+            `).join('') : '<p class="text-xs text-zinc-500 text-center py-4">Walang approved.</p>';
+        }
+
+        function openAdminEditUserModal(userId) {
+            const targetUser = allUsers.find(u => u.id === userId);
+            if (!targetUser) return;
+            document.getElementById("edit-user-id").value = targetUser.id;
+            document.getElementById("edit-user-name").value = targetUser.name;
+            document.getElementById("edit-user-sitio").value = targetUser.sitio;
+            document.getElementById("edit-user-role").value = targetUser.role;
+            document.getElementById("edit-user-phone").value = targetUser.phone;
+            toggleAdminEditModal(true);
+        }
+
+        function toggleAdminEditModal(show) {
+            document.getElementById("admin-edit-modal").classList.toggle("hidden", !show);
+        }
+
+        function saveAdminUserEdit(e) {
+            e.preventDefault();
+            const id = document.getElementById("edit-user-id").value;
+            const updatedData = {
+                name: document.getElementById("edit-user-name").value.trim(),
+                sitio: document.getElementById("edit-user-sitio").value.trim(),
+                role: document.getElementById("edit-user-role").value,
+                phone: document.getElementById("edit-user-phone").value.trim()
+            };
+
+            if (db) db.ref('users/' + id).update(updatedData);
+            toggleAdminEditModal(false);
+            alert("Na-update na ang impormasyon ng user!");
+        }
+
+        function deleteUserByAdmin(userId) {
+            if (confirm("Sigurado ka bang gusto mong burahin ang user na ito sa system?")) {
+                if (db) db.ref('users/' + userId).remove();
+            }
+        }
+
+        function updateUserStatus(userId, newStatus) {
+            if (db) db.ref('users/' + userId).update({ status: newStatus });
+            const u = allUsers.find(x => x.id === userId);
+            if (u) u.status = newStatus;
+            renderAdminUsers(allUsers);
+            renderPublicResponders(allUsers);
+        }
+
+        function renderAdminAlerts(alertsList) {
+            document.getElementById("count-alerts").textContent = alertsList.length;
+            document.getElementById("alert-list-container").innerHTML = alertsList.length ? alertsList.map(a => `
+                <div class="bg-zinc-950 p-3 rounded-lg border border-red-900/50 text-xs space-y-2">
+                    <div class="flex justify-between"><span class="font-black text-red-500 uppercase">${a.type} / ${a.disaster || 'Alert'}</span><span class="text-[10px] text-zinc-500">${a.timestamp}</span></div>
+                    <p class="font-semibold text-zinc-300">Opisyal: ${a.officialName} (${a.sitio})</p>
+                    <div class="flex justify-between items-center"><a href="tel:${a.phone}" class="px-2.5 py-1 bg-red-600 text-white font-bold rounded text-[10px]">Tawagan</a><button type="button" onclick="resolveAlert('${a.id}')" class="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold rounded text-[10px] cursor-pointer">Clear</button></div>
+                </div>
+            `).join('') : '<p class="text-xs text-zinc-500 text-center py-4">Walang aktibong broadcast.</p>';
+        }
+
+        function resolveAlert(id) {
+            if (db) {
+                db.ref('alerts/' + id).remove().then(() => {
+                    console.log("Alert cleared successfully:", id);
+                }).catch(err => {
+                    console.error("Error removing alert:", err);
+                });
+            } else {
+                localAlerts = localAlerts.filter(a => a.id !== id);
+                localStorage.setItem('tb_local_alerts', JSON.stringify(localAlerts));
+                renderAdminAlerts(localAlerts);
+            }
+        }
+
+        function switchAdminTab(tab) {
+            ['alerts', 'users', 'approved', 'theme'].forEach(t => {
+                document.getElementById(`admin-tab-${t}`).classList.toggle("hidden", t !== tab);
+                document.getElementById(`tab-btn-${t}`).className = t === tab ? 
+                    "text-[11px] font-bold px-2 py-1 rounded-lg theme-accent-soft-bg theme-accent-text border border-zinc-800 whitespace-nowrap cursor-pointer" : 
+                    "text-[11px] font-bold px-2 py-1 rounded-lg bg-zinc-950 text-zinc-400 border border-zinc-800 whitespace-nowrap cursor-pointer";
+            });
+        }
+    </script>
+</body>
+</html>
