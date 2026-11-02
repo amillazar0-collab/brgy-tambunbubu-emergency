@@ -1,16 +1,12 @@
 {
-  "name": "Brgy. Tambunbubu Emergency System",
-  "short_name": "Tambunbubu sos",
-  "start_url": "./index.html",
+  "background_color": "#e20c31",
+  "description": "Brgy. Tambunbubu One Click Emergency Broadcast System",
+  "dir": "ltr",
   "display": "standalone",
-  "background_color": "#0b0f17",
-  "theme_color": "#10b981"
-  "icons": [
-    {
-      "src": "icon.png",
-      "sizes": "192x192 512x512",
-      "type": "image/jpeg",
-      "purpose": "any maskable"
-    }
-  ]
+  "name": "tambunbubu one click",
+  "orientation": "any",
+  "scope": "/",
+  "short_name": "tambunbubu one click",
+  "start_url": "/",
+  "theme_color": "#e57119"
 }
