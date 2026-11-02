@@ -17,5 +17,15 @@
       "sizes": "512x512",
       "type": "image/png"
     }
+  ],
+  "lang": "en",
+  "dir": "auto",
+  "orientation": "any",
+  "display_override": [
+    "standalone",
+    "window-controls-overlay",
+    "fullscreen",
+    "minimal-ui",
+    "browser"
   ]
 }
