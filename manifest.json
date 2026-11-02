@@ -8,15 +8,9 @@
   "theme_color": "#00FF66",
   "icons": [
     {
-      "src": "https://amillazar0-collab.github.io/brgy-tambunbubu-emergency/icon.jpg",
-      "sizes": "192x192",
-      "type": "image/jpeg",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "https://amillazar0-collab.github.io/brgy-tambunbubu-emergency/icon.jpg",
+      "src": "icon.png",
       "sizes": "512x512",
-      "type": "image/jpeg",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]
