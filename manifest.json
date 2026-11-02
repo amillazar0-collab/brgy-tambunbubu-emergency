@@ -1,21 +1,16 @@
 {
-  "name": "Brgy. Tambunbubu Emergency System",
-  "short_name": "Tambunbubu one click",
-  "description": "Brgy. Tambunbubu One Click Emergency Broadcast System",
+  "name": "Tambunbubu one click",
+  "short_name": "Tambunbubu",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0b0f17",
   "theme_color": "#10b981",
   "icons": [
     {
-      "src": "icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "icon-512.png",
+      "src": "https://cdn-icons-png.flaticon.com/512/564/564619.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }
