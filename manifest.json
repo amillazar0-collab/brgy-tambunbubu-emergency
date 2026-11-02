@@ -1,15 +1,23 @@
 {
-  "name": "Tambunbubu One Click",
-  "short_name": "Tambunbubu",
+  "name": "Banguingui Emergency Hub",
+  "short_name": "Emergency",
+  "description": "Brgy. Tambunbubu One Click Emergency Alert System",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#0b0f17",
-  "theme_color": "#10b981",
+  "background_color": "#050811",
+  "theme_color": "#00FF66",
   "icons": [
     {
-      "src": "icon.jpg",
+      "src": "https://amillazar0-collab.github.io/brgy-tambunbubu-emergency/icon.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://amillazar0-collab.github.io/brgy-tambunbubu-emergency/icon.jpg",
       "sizes": "512x512",
-      "type": "image/jpeg"
+      "type": "image/jpeg",
+      "purpose": "any maskable"
     }
   ]
 }
