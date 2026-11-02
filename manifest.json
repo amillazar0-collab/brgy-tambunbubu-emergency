@@ -1,6 +1,6 @@
 {
   "name": "Brgy. Tambunbubu Emergency System",
-  "short_name": "Tambunbubu one click",
+  "short_name": "Tambunbubu sos",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0b0f17",
